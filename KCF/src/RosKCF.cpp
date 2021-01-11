@@ -7,19 +7,28 @@
 #include <sensor_msgs/image_encodings.h> 
 #include "ros_kcf/InitRect.h"
 #include "std_msgs/Int32MultiArray.h"
+#include "sensor_msgs/PointCloud.h"
+
 #include <vector>
 #include "kcftracker.hpp"
 
 using namespace std;
 using namespace cv;
 
-RosKCF::RosKCF():_rgb_topic("/realsense/color/image_raw"), _dsp_topic("/realsense/depth/image_rect_raw")
+RosKCF::RosKCF():_rgb_topic("/realsense/color/image_raw"), 
+                 _dsp_topic("/realsense/depth/image_rect_raw"), 
+                 _camera_info("/realsense/color/camera_info"),
+                 track_rect_("/track_rect_pub"),
+                 target_pose_("/target_pose")                 
 {
     this->service = nodeHandle.advertiseService("init_rect", &RosKCF::setInitRect, this);
-    this->trackPub = nodeHandle.advertise<std_msgs::Int32MultiArray>("track_rect_pub", 1000);
+    this->trackPub = nodeHandle.advertise<std_msgs::Int32MultiArray>(track_rect_, 1000);
+    this->targetPosePub = nodeHandle.advertise<sensor_msgs::PointCloud>(target_pose_, 1000);
     image_transport::ImageTransport it(nodeHandle);
+    ros::NodeHandle nh_;
     this->imageSub = it.subscribe(_rgb_topic, 100, &RosKCF::buildAndTrack, this);
     this->dispritySub = it.subscribe(_dsp_topic, 100, &RosKCF::computerTrackPose, this);
+    this->cameraInfoSub = nh_.subscribe(_camera_info, 100, &RosKCF::onCameraInfoCb, this);
     this->initRectPtr = NULL;
     this->kcfPtr = NULL;
 }
@@ -77,6 +86,20 @@ void RosKCF::buildAndTrack(const sensor_msgs::ImageConstPtr &msg)
     }
 }
 
+void RosKCF::onCameraInfoCb(const sensor_msgs::CameraInfoConstPtr &msg)
+{
+    width_ = msg->width;
+    height_ = msg->height;
+    fBaseline_ = msg->K[3];
+    fFocus_ = msg->K[0];
+    cx_ = msg->K[2];
+    cy_ = msg->K[5];
+    fBF_ = fFocus_ * fBaseline_;
+#if 0    
+    ROS_INFO("Recive_CameraInfo: Camera Height: %u, Width: %u, BF: %f, Baseline: %f, Focus: %f",
+                    height_, width_, fBF_, fBaseline_, fFocus_);
+#endif
+}
 
 void RosKCF::computerTrackPose(const sensor_msgs::ImageConstPtr &msg)
 {
@@ -90,10 +113,30 @@ void RosKCF::computerTrackPose(const sensor_msgs::ImageConstPtr &msg)
 
 void RosKCF::computerDepthRegion()
 {
+    float xx_ = 0;
+    float yy_ = 0;
     cv::Mat roi_depth = depth_img_(result_);
     // drawHistGraph(roi_depth); 
-    accValue(roi_depth);
-#if 0
+    goal_.z = accValue(roi_depth);
+    if(goal_.z > 0.1f && result_.area() > 0) {
+        goal_.x = (((result_.x + cvRound(result_.width/2.0)) - cx_)*goal_.z)/fFocus_;
+        goal_.y = (((result_.y + cvRound(result_.height/2.0)) - cy_)*goal_.z)/fFocus_;
+    }
+
+    sensor_msgs::PointCloud _goal_point;
+    _goal_point.header.stamp = ros::Time::now();
+    _goal_point.header.frame_id = "top_plate_link";
+    _goal_point.points.resize(1);
+    _goal_point.channels.resize(1);
+    _goal_point.channels[0].name = "current";    
+    _goal_point.points[0].x = goal_.z;
+    _goal_point.points[0].y = -goal_.x;
+    _goal_point.points[0].z = goal_.y;
+
+    targetPosePub.publish(_goal_point);
+
+#if 1
+    std::cout << "Goal : " << goal_ << std::endl;
     std::cout << "ROI:" << roi_depth.cols << " " << roi_depth.rows << std::endl;    
 #endif    
 }
@@ -134,7 +177,7 @@ void RosKCF::drawHistGraph(cv::Mat _img)
     cv::waitKey(10);
 }
 
-void RosKCF::accValue(cv::Mat _img)
+float RosKCF::accValue(cv::Mat _img)
 {
     int ocp_pixels = 0;
     float accm_value = 0.0f;    
@@ -159,6 +202,7 @@ void RosKCF::accValue(cv::Mat _img)
 #if 0    
     std::cout << "AVG_DEPTH : " << avg_depth << ", ocp_pixels : " << ocp_pixels << std::endl;
 #endif
+    return avg_depth;
 }
 
 void RosKCF::getTrackShow(cv::Mat _img, cv::Rect _rect)
