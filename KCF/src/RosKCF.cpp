@@ -125,7 +125,7 @@ void RosKCF::computerDepthRegion()
 
     sensor_msgs::PointCloud _goal_point;
     _goal_point.header.stamp = ros::Time::now();
-    _goal_point.header.frame_id = "top_plate_link";
+    _goal_point.header.frame_id = "base_link";
     _goal_point.points.resize(1);
     _goal_point.channels.resize(1);
     _goal_point.channels[0].name = "current";    
