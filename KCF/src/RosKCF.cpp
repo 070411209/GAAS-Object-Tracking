@@ -39,6 +39,7 @@ bool RosKCF::setInitRect(ros_kcf::InitRect::Request &req, ros_kcf::InitRect::Res
     int tly = req.ymin;
     int brx = req.xmax;
     int bry = req.ymax;
+    res.sum = 10000; // test
     this->initRectPtr = new cv::Rect(Point2d(tlx, tly), Point2d(brx, bry));
     std::cout<<"Init rect received."<<std::endl;
     return true;

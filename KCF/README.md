@@ -78,5 +78,14 @@ cmake ..
 make -j4
 ```
 
+
+## REFRENCE
+https://blog.csdn.net/dujuancao11/article/details/109325218
+https://blog.csdn.net/ljsant/article/details/75246426
+https://blog.csdn.net/ljsant/article/details/75245365
+https://blog.csdn.net/chenjiazhou12/article/details/29378087
+
+
+
 ---
 Thanks for [Project KCFcpp](https://github.com/joaofaro/KCFcpp.git).

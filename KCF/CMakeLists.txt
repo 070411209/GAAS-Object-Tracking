@@ -25,15 +25,22 @@ include_directories(
 FILE(GLOB_RECURSE sourcefiles "src/*.cpp")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
-add_executable( startRosService ${sourcefiles} )
 
+# add_executable( testDetect src/trainBackFore.cpp)
+add_executable( testTrack src/startRosService.cpp src/RosKCF.cpp src/kcftracker.cpp src/fhog.cpp)
+add_executable( testDetect src/trainBackFore.cpp)
 
 target_link_libraries(
-  startRosService
+  testDetect
   ${OpenCV_LIBS}
   ${catkin_LIBRARIES}
 )
 
+target_link_libraries(
+  testTrack
+  ${OpenCV_LIBS}
+  ${catkin_LIBRARIES}
+)
 
 add_service_files(
   FILES
@@ -43,5 +50,3 @@ generate_messages(
   DEPENDENCIES
   std_msgs
 )
-
-
