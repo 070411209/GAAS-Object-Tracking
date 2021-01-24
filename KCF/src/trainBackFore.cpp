@@ -94,7 +94,6 @@ void RosDetect::disprityCb(const sensor_msgs::ImageConstPtr &msg)
 {
     try{
         depth_img_ = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::TYPE_32FC1)->image;    
-        // depth_img_.copyTo(frame); 
     }catch(cv_bridge::Exception &e){
         ROS_ERROR("Could not convert from '%s' to 'TYPE_32FC1'.", msg->encoding.c_str());
     }
@@ -187,7 +186,6 @@ int RosDetect::start()
         //convert frame into the grayscale image
         cvtColor(frame, bkImg, CV_BGR2GRAY);
         cvtColor(frame, frImg, CV_BGR2GRAY);
-        // convertTo(dst, type, scale, shift) : dst<type>(i)=src(i)xscale+(shift,shift,...)
         frImg.convertTo(frameMat, CV_32FC1);
         frImg.convertTo(frMat, CV_32FC1);
         frImg.convertTo(frImg, CV_32FC1);
