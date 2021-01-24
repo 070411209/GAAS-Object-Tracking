@@ -35,6 +35,7 @@ private:
     cv::Mat bkMat;    //foreground image
     cv::Mat result;
     cv::Mat frcontImg;
+    cv::Mat tmp_frame, bgmask, out_frame;
     std::vector<std::vector<cv::Point>> contours;
     std::vector<Vec4i> hierarchy;
     int nFrmNum = 0;
@@ -49,6 +50,9 @@ private:
     cv::Mat depth_img_;
     float avg_depth = 0.0f;
     float avg_sat = 0.0f;
+    cv::Mat kernel_erode;
+    cv::Mat kernel_dilate;
+    Ptr<BackgroundSubtractor> bgsubtractor;
 public:
     RosDetect();
     int start();
@@ -57,21 +61,22 @@ public:
     void onCameraInfoCb(const sensor_msgs::CameraInfoConstPtr &msg);  
     int detectService(cv::Rect& rect_);
     void cmpRegionDepth(cv::Mat _img);
+    void refineSegments(const Mat& img, Mat& mask, Mat& dst);
 };
 
 RosDetect::RosDetect()          
 {
 #if 1
     //创建窗口
-    // namedWindow("video", 1);
+    namedWindow("video", 1);
     // namedWindow("background", 1);
     namedWindow("foreground", 1);
     namedWindow("result", 1);
     //使窗口有序排列
-    // cvMoveWindow("video", 30, 0);
+    cvMoveWindow("video", 30, 0);
     // cvMoveWindow("background", 360, 0);
-    cvMoveWindow("foreground", 690, 0);
-    cvMoveWindow("result", 890, 0);
+    cvMoveWindow("foreground", 300, 0);
+    cvMoveWindow("result", 600, 0);
 #endif
     image_transport::ImageTransport it(nodeHandle);
     this->client_ = nodeHandle.serviceClient<ros_kcf::InitRect>("init_rect");
@@ -110,6 +115,59 @@ void RosDetect::onCameraInfoCb(const sensor_msgs::CameraInfoConstPtr &msg)
     fBF_ = fFocus_ * fBaseline_;
 }
 
+void RosDetect::refineSegments(const Mat& img, Mat& mask, Mat& dst)
+{
+	int niters = 3;
+ 
+	vector<vector<Point> > contours;
+	vector<Vec4i> hierarchy;
+ 
+	Mat temp;
+ 
+	dilate(mask, temp, Mat(), Point(-1,-1), niters);
+	erode(temp, temp, Mat(), Point(-1,-1), niters*2);
+	dilate(temp, temp, Mat(), Point(-1,-1), niters);
+ 
+	findContours( temp, contours, hierarchy, CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE );
+ 
+	dst = Mat::zeros(img.size(), CV_8UC3);
+ 
+	if( contours.size() == 0 )
+		return;
+ 
+	// iterate through all the top-level contours,
+	// draw each connected component with its own random color
+	int idx = 0, largestComp = 0;
+	double maxArea = 0;
+ 
+	for( ; idx >= 0; idx = hierarchy[idx][0] )
+	{
+		const vector<Point>& c = contours[idx];
+		double area = fabs(contourArea(Mat(c)));
+		if( area > maxArea )
+		{
+			maxArea = area;
+			largestComp = idx;
+		}
+	}
+	Scalar color( 0, 0, 255 );
+	drawContours( dst, contours, largestComp, color, CV_FILLED, 8, hierarchy );
+	std::vector<cv::Rect> boundRect(contours.size());
+	int max_area = 0;
+	int max_index = 0;	
+	for (int i = 0; i < contours.size(); i++)
+	{
+		boundRect[i] = boundingRect(contours[i]);
+		if(boundRect[i].area() > max_area) {
+			max_area = boundRect[i].area();
+			max_index = i;
+		}
+	}
+	if(max_index > 0)
+	{
+		rectangle(dst, boundRect[max_index], cv::Scalar(0, 255, 0), 2);//在result上绘制正外接矩形
+	} 	
+}
 
 void RosDetect::cmpRegionDepth(cv::Mat _img)
 {
@@ -189,10 +247,14 @@ int RosDetect::start()
         frImg.convertTo(frameMat, CV_32FC1);
         frImg.convertTo(frMat, CV_32FC1);
         frImg.convertTo(frImg, CV_32FC1);
+        kernel_erode = getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+        kernel_dilate = getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5), Point(-1, -1));  
+        bgsubtractor = createBackgroundSubtractorMOG2();
     }
     else if(nFrmNum > 1)
     {
         result = frame.clone();
+        tmp_frame = frame.clone();
         cvtColor(frame, frImg, CV_BGR2GRAY);
         frImg.convertTo(frameMat, CV_32FC1);
         //先做高斯滤波，以平滑图像
@@ -203,12 +265,14 @@ int RosDetect::start()
         absdiff(frameMat, bkMat, frMat);
         //二值化前景图
         threshold(frMat, frImg, 20, 255.0, CV_THRESH_BINARY);
+        //进行形态学滤波，去掉噪音  
+        bgsubtractor->apply(tmp_frame, bgmask);
+        morphologyEx(bgmask, bgmask, MORPH_OPEN, kernel_erode, Point(-1, -1));
+		refineSegments(tmp_frame, bgmask, out_frame);
 
-        //进行形态学滤波，去掉噪音
-        cv::Mat kernel_erode = getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
-        dilate(frImg, frImg, Mat());
-        erode(frImg, frImg, Mat());
-        dilate(frImg, frImg, Mat());
+        dilate(frImg, frImg, kernel_dilate);
+        erode(frImg, frImg, kernel_erode);
+        dilate(frImg, frImg, kernel_dilate);
         //update the background
         cv::addWeighted(frameMat, 1 - 0.03, bkMat, 0.03, 0, bkMat);
         bkMat.convertTo(bkImg, CV_8UC1);
@@ -239,10 +303,10 @@ int RosDetect::start()
             rectangle(result, boundRect[max_index], cv::Scalar(0, 255, 0), 2);//在result上绘制正外接矩形
 
         }    
-        // cv::imshow("video", frame);
+        cv::imshow("video", frame);
         // cv::imshow("background", bkImg);
         cv::imshow("foreground", frImg);
-        cv::imshow("result", result);
+        cv::imshow("result", out_frame);
 
     } // end of if-else
     return ret;
