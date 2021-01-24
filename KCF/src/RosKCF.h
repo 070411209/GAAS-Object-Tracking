@@ -70,7 +70,7 @@ public:
 
     void drawHistGraph(cv::Mat _img);
 
-    float accValue(cv::Mat _img);
+    float cmpRegionDepth(cv::Mat _img);
 };
 
 #endif

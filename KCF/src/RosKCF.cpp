@@ -41,7 +41,7 @@ bool RosKCF::setInitRect(ros_kcf::InitRect::Request &req, ros_kcf::InitRect::Res
     int bry = req.ymax;
     res.sum = 10000; // test
     this->initRectPtr = new cv::Rect(Point2d(tlx, tly), Point2d(brx, bry));
-    std::cout<<"Init rect received."<<std::endl;
+    std::cout<<"Init received rect: " << *initRectPtr << std::endl;
     return true;
 }
 
@@ -53,7 +53,7 @@ void RosKCF::buildAndTrack(const sensor_msgs::ImageConstPtr &msg)
 
         if (kcfPtr == NULL && initRectPtr != NULL)
         {
-            cout<<"Build"<<endl;
+            cout<<"Set KCF init Rect!"<<endl;
             kcfPtr = new KCFTracker(HOG, FIXEDWINDOW, MULTISCALE, LAB);
             kcfPtr->init(*initRectPtr, img);
 
@@ -118,7 +118,7 @@ void RosKCF::computerDepthRegion()
     float yy_ = 0;
     cv::Mat roi_depth = depth_img_(result_);
     // drawHistGraph(roi_depth); 
-    goal_.z = accValue(roi_depth);
+    goal_.z = cmpRegionDepth(roi_depth);
     if(goal_.z > 0.1f && result_.area() > 0) {
         goal_.x = (((result_.x + cvRound(result_.width/2.0)) - cx_)*goal_.z)/fFocus_;
         goal_.y = (((result_.y + cvRound(result_.height/2.0)) - cy_)*goal_.z)/fFocus_;
@@ -136,7 +136,7 @@ void RosKCF::computerDepthRegion()
 
     targetPosePub.publish(_goal_point);
 
-#if 1
+#if 0
     std::cout << "Goal : " << goal_ << std::endl;
     std::cout << "ROI:" << roi_depth.cols << " " << roi_depth.rows << std::endl;    
 #endif    
@@ -178,12 +178,13 @@ void RosKCF::drawHistGraph(cv::Mat _img)
     cv::waitKey(10);
 }
 
-float RosKCF::accValue(cv::Mat _img)
+float RosKCF::cmpRegionDepth(cv::Mat _img)
 {
     int ocp_pixels = 0;
     float accm_value = 0.0f;    
     auto pixels_num = result_.area();
     float avg_depth = 0.0f;
+    float avg_sat = 0.0f;
 
     std::vector<float> ocp_depths(pixels_num);
     if (!_img.empty()) {
@@ -198,10 +199,13 @@ float RosKCF::accValue(cv::Mat _img)
             }
         }
     }
-    if(ocp_pixels > 0)
+    if(ocp_pixels > 0) {
         avg_depth = accm_value / ocp_pixels;
-#if 0    
-    std::cout << "AVG_DEPTH : " << avg_depth << ", ocp_pixels : " << ocp_pixels << std::endl;
+        avg_sat = (float)ocp_pixels / pixels_num; 
+    }
+ 
+#if 1    
+    std::cout << "AVG_DEPTH : " << avg_depth << ", AVG_STATION : " << avg_sat << ", ocp_pixels : " << ocp_pixels << std::endl;
 #endif
     return avg_depth;
 }
@@ -210,5 +214,6 @@ void RosKCF::getTrackShow(cv::Mat _img, cv::Rect _rect)
 {
     cv::rectangle(_img, _rect, Scalar(255, 0, 0), 1, 1, 0);
     cv::imshow("TrackerShow", _img);
-    cv::waitKey(10);
+    if (waitKey(2) >= 0)
+        return;   
 }
