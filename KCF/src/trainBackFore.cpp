@@ -50,6 +50,7 @@ private:
     cv::Mat depth_img_;
     float avg_depth = 0.0f;
     float avg_sat = 0.0f;
+    int avg_area = 0.0;
     cv::Mat kernel_erode;
     cv::Mat kernel_dilate;
     Ptr<BackgroundSubtractor> bgsubtractor;
@@ -200,6 +201,7 @@ void RosDetect::cmpRegionDepth(cv::Mat _img)
     {
         avg_depth = accm_value / ocp_pixels;
         avg_sat = (float)ocp_pixels / pixels_num;
+        avg_area = pixels_num;
 #if 1
         std::cout << "AVG_DEPTH : " << avg_depth << ", avg_sat : " << avg_sat
                   << ", pixels_num : " << pixels_num << ", ocp_pixels : " << ocp_pixels << std::endl;
@@ -214,7 +216,7 @@ int RosDetect::detectService(cv::Rect &rect_)
 
     cv::Mat roi_depth = depth_img_(rect_);
     cmpRegionDepth(roi_depth);
-    if (avg_depth < 8.0 && avg_depth > 4.0 && avg_sat > 0.8)
+    if (avg_depth < 5.0 && avg_depth > 2.0 && avg_sat > 0.8 && avg_area > 4000)
     {
         srv.request.xmin = rect_.x;
         srv.request.ymin = rect_.y;
